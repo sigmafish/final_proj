@@ -132,10 +132,7 @@ int main(int argc, char *argv[])
    int TimeStep = 20;                   // the time steps
    double EndTime = 0.1;                // the end of time
    int NThread = 4;                     // the number of threads
-   int NComponents = 3;                 // the number of the Euler equations
-   double residual_newton_min = 0.0001;
-   double residual_newton = 1E5;
-   int newton_count_max = 20;   
+   int NComponents = 3;                 // the number of the Euler equations  
    vector<double> LeftState;            // [rho_L, u_L, P_L, c_L], take u=Vx for 1D case
    vector<double> RightState;           // [rho_R, u_R, P_R, c_R]
    try {
@@ -438,12 +435,14 @@ double ComputeF(const double gamma, const double pStar,
 // -----------------------------------------------------------
 // compute f(pStar, gamma, p, rho)
 // -----------------------------------------------------------
-double Computef(const GammaFacts &GaF, const double pStar, 
-                const vector<double> &state)
+double Computef(const GammaFacts &GaF, const double pStar, const vector<double> &state)
 {
+//  state = [rho, u, P, c]
     if (pStar >= state[2]) // pStar >= pSide => shock wave
+//      f = (pStar - P)/(rho*c*sqrt((gamma + 1)*pStar/P/2/gamma + (gamma - 1)/2/gamma ))
         return (pStar - state[2]) / (state[0] * state[3] * sqrt(GaF.gaP1Over2Ga * pStar / state[2] + GaF.gaM1Over2Ga));
     else                   // pStar < pSide => rarefaction wave
+//      f = 2*c*((pStar/P)^((gamma-1)/2/gamma) - 1)/(gamma - 1)
         return 2 * state[3] * (pow(pStar/state[2], GaF.gaM1Over2Ga) - 1) / GaF.gaM1;
 }
 
