@@ -1,8 +1,6 @@
 #include <stdio.h>
 #include <cstdio>
 #include <cstdlib>
-//#include <mpi.h>
-//#include <omp.h>
 
 #include <exception>
 #include <string>
@@ -95,28 +93,29 @@ void SaveData(const int NGrids, string &basicStr, const vector<double> &x, const
 
 // -----------------------------------------------------------
 // the main funtion with arguments:
-// argv[1]: (int)NGrid
-// argv[2]: (int)TimeStep
-// argv[3]: (double)EndTime
-// argv[4]: (int)NThreads
-// argv[5]: (string)LeftState
-// argv[6]: (string)RightState
-// ex. ./RiemannSolver_Exact.out {NGrid} {TimeStep} {EndTime} {NThreads} {LeftState} {RightState}
+// argv[1]: (double)gamma
+// argv[2]: (int)NGrid
+// argv[3]: (int)TimeStep
+// argv[4]: (double)EndTime
+// argv[5]: (int)NThreads
+// argv[6]: (string)LeftState
+// argv[7]: (string)RightState
+// ex. ./RiemannSolver_Exact.out {gamma} {NGrid} {TimeStep} {EndTime} {NThreads} {LeftState} {RightState}
 // -----------------------------------------------------------
 int main(int argc, char *argv[])
 {
-/********* set mpi *********/
-
+	
 /********* get the arguments *********/
-    string argv1, argv2, argv3, argv4, argv5, argv6;
+    string argv1, argv2, argv3, argv4, argv5, argv6, argv7;
     if (IsTestMode)
     {
-        argv1 = "2000";
-        argv2 = "20";
-        argv3 = "0.25";
-        argv4 = "4";
-        argv5 = "1.0,-1.0,0.4";
-        argv6 = "1.0,1.0,0.4";
+		argv1 = "1.4";
+        argv2 = "2000";
+        argv3 = "20";
+        argv4 = "0.25";
+        argv5 = "4";
+        argv6 = "1.0,-1.0,0.4";
+        argv7 = "1.0,1.0,0.4";
     }else
     {
         argv1 = argv[1];
@@ -125,9 +124,11 @@ int main(int argc, char *argv[])
         argv4 = argv[4];
         argv5 = argv[5];
         argv6 = argv[6];
+		argv7 = argv[7];
     }
 
 /********* set variables from arguments *********/
+   double gamma = 1.4;                 // the ratio of specific heats, Cp/Cv, gamma=1.4 for air
    int NGrid = 100;                    // the number of grid(1D)
    int TimeStep = 20;                   // the time steps
    double EndTime = 0.1;                // the end of time
@@ -136,22 +137,20 @@ int main(int argc, char *argv[])
    vector<double> LeftState;            // [rho_L, u_L, P_L, c_L], take u=Vx for 1D case
    vector<double> RightState;           // [rho_R, u_R, P_R, c_R]
    try {
-       NGrid = stoi(argv1);
-       TimeStep = stoi(argv2);
-       EndTime = stod(argv3);
-       NThread = stoi(argv4);
-       SetInitState(argv5, LeftState);   // insert [rho_L, u_L, P_L]
-       SetInitState(argv6, RightState);  // insert [rho_R, u_R, P_R]
+	   gamma = stod(argv1);
+       NGrid = stoi(argv2);
+       TimeStep = stoi(argv3);
+       EndTime = stod(argv4);
+       NThread = stoi(argv5);
+       SetInitState(argv6, LeftState);   // insert [rho_L, u_L, P_L]
+       SetInitState(argv7, RightState);  // insert [rho_R, u_R, P_R]
        NComponents = LeftState.size();   // only for 1D case
    } catch (exception const &ex) {
        printf( "There are invalid numbers\n" );
        return EXIT_FAILURE;
    }
 
-/********* set openmp *********/
-
 /********* set constants and variables *********/
-    const double gamma = 1.4;               // the ratio of specific heats, Cp/Cv, gamma=1.4 for air
     const GammaFacts GaF(gamma);            // collect the factors related with gamma
     const double dx = 1. / NGrid;           // the space interval, uniform over x, y and z
     const double dt = EndTime / TimeStep;   // the time interval
@@ -271,7 +270,7 @@ int main(int argc, char *argv[])
         dist_0 = leftMidState.spSet[0] * t + x[halfGrid];
         dist_1 = leftMidState.spSet[1] * t + x[halfGrid];
         dist_2 = leftMidState.spSet[2] * t + x[halfGrid];
-        for (int j = 0 ; j < halfGrid ; ++j)
+        for (int j = halfGrid - 1 ; j >= 0  ; --j)
         {
             if (x[j] > dist_0)
             {
@@ -288,14 +287,15 @@ int main(int argc, char *argv[])
                 U[0][j] = LeftState[0] * pow(temp, GaF.twoOverGaM1);
                 U[1][j] = GaF.twoOverGaP1 * (LeftState[3] + GaF.gaM1Over2 * LeftState[1] + tempVel);
                 U[2][j] = LeftState[2] * pow(temp, GaF.twoGaOverGaM1);
-            }
+            }else
+                break;
         }
 
 //       update data on the right side
         dist_0 = rightMidState.spSet[0] * t + x[halfGrid];
         dist_1 = rightMidState.spSet[1] * t + x[halfGrid];
         dist_2 = rightMidState.spSet[2] * t + x[halfGrid];
-        for (int j = halfGrid ; j < NGrid ; ++j)
+        for (int j = halfGrid ; j < NGrid  ; ++j)
         {
             if (x[j] < dist_0)
             {
@@ -312,7 +312,8 @@ int main(int argc, char *argv[])
                 U[0][j] = RightState[0] * pow(temp, GaF.twoOverGaM1);
                 U[1][j] = GaF.twoOverGaP1 * (-RightState[3] + GaF.gaM1Over2 * RightState[1] + tempVel);
                 U[2][j] = RightState[2] * pow(temp, GaF.twoGaOverGaM1);
-            }
+            }else
+                break;
         }
 
         t += dt;
@@ -380,7 +381,7 @@ void SetInitState(const string &argStr, vector<double> &state) {
 // -----------------------------------------------------------
 double CompPStarNewton(const double gamma, const vector<double> &leftState, const vector<double> &rightState)
 {
-    return 0.04537;
+    return 0.30313;//0.04537;
 }
 
 // -----------------------------------------------------------
