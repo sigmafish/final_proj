@@ -16,7 +16,6 @@ using namespace std;
 
 // ----------------- define functions -----------------//
 void SetInitState(const string &argStr, vector<double> &state);
-double CompPStarNewton(const double gamma, const vector<double> &leftState, const vector<double> &rightState);
 double ComputeF(const double gamma, const double pStar, const vector<double> &leftState, const vector<double> &rightState);
 double ComputeDiffF(const double gamma, const double pStar, const vector<double> &leftState, const vector<double> &rightState);
 double Computef(const double gamma, const double pStar, const vector<double> &leftState, const vector<double> &rightState);
