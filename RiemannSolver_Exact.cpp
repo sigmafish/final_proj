@@ -8,7 +8,7 @@
 #include <vector>
 #include <time.h>
 
-#define IsTestMode 1
+#define IsTestMode 0
 
 using namespace std;
 
