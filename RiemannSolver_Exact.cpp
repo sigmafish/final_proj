@@ -342,8 +342,8 @@ int main(int argc, char *argv[])
     str.append(to_string(EndTime) + "\n# with (NGrid, TimeStep, ExecutionTime) = (" +
                to_string(NGrid) + "," + to_string(TimeStep) + "," + to_string(t) + ")\n" +
                "# Initial condition of the strong shock problem:\n" +
-               "#   left  state: (rho, Vx, P) = (" + argv5 + ")\n" +
-               "#   right state: (rho, Vx, P) = (" + argv6 + ")\n\n");
+               "#   left  state: (rho, Vx, P) = (" + argv6 + ")\n" +
+               "#   right state: (rho, Vx, P) = (" + argv7 + ")\n\n");
     SaveData(NGrid, str, x, U);
 
     return EXIT_SUCCESS;
