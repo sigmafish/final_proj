@@ -113,8 +113,8 @@ int main(int argc, char *argv[])
         argv3 = "20";
         argv4 = "0.25";
         argv5 = "4";
-        argv6 = "1.0,-1.0,0.4";
-        argv7 = "1.0,1.0,0.4";
+        argv6 = "0.125,0.0,0.1";
+        argv7 = "1.0,0.0,1.0";
     }else
     {
         argv1 = argv[1];

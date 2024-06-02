@@ -87,9 +87,8 @@ class MidState {
 
 // ----------------- define functions -----------------//
 void SetInitState(const string &argStr, vector<double> &state);
-double CompPStarNewton(const double gamma, const vector<double> &leftState, const vector<double> &rightState);
+double CompPStarBisection(const double gamma, const vector<double> &leftState, const vector<double> &rightState);
 double ComputeF(const double gamma, const double pStar, const vector<double> &leftState, const vector<double> &rightState);
-double ComputeDiffF(const double gamma, const double pStar, const vector<double> &leftState, const vector<double> &rightState);
 double Computef(const GammaFacts &GaF, const double pStar, const vector<double> &state);
 void SaveData(const int NGrids, string &basicStr, const vector<double> &x, const vector<vector<double>> &U);
 
@@ -127,8 +126,8 @@ int main(int argc, char *argv[])
         argv3 = "20";
         argv4 = "0.25";
         argv5 = "4";
-        argv6 = "1.0,-1.0,0.4";
-        argv7 = "1.0,1.0,0.4";
+        argv6 = "0.125,0.0,0.1";
+        argv7 = "1.0,0.0,1.0";
     }else
     {
         argv1 = argv[1];
@@ -260,7 +259,7 @@ int main(int argc, char *argv[])
     }
 
 // compute pStar and uStar
-    tempMidState.push_back(CompPStarNewton(gamma, LeftState, RightState));
+    tempMidState.push_back(CompPStarBisection(gamma, LeftState, RightState));
     tempMidState.push_back(RightState[1] + Computef(GaF, tempMidState[0], RightState));
 // verify the results: pStar
     if (IsTestMode)
@@ -437,30 +436,60 @@ void SetInitState(const string &argStr, vector<double> &state) {
 }
 
 // -----------------------------------------------------------
-// compute the pStar from the Newton Method
+// compute the pStar from the Bisection Method
 // -----------------------------------------------------------
-double CompPStarNewton(const double gamma, const vector<double> &leftState, const vector<double> &rightState)
+double CompPStarBisection(const double gamma, const vector<double> &leftState, const vector<double> &rightState)
 {
-    return 0.30313;
+    double pStar, pStar0, compuF, compuF_L, compuF_R;
+    double p_L0 = leftState[2], p_R0 = rightState[2], p_L=0, p_R= (p_L0+p_R0)/2 * 5;
+
+    while(true)
+    {
+        pStar0 = (p_L+p_R)/2;
+        pStar = pStar0;
+        if (p_L == pStar || p_R == pStar) break;
+		compuF = ComputeF(gamma, pStar, leftState, rightState);
+        compuF_L = ComputeF(gamma, p_L, leftState, rightState);
+        compuF_R = ComputeF(gamma, p_R, leftState, rightState);
+		if (compuF == 0) break;
+		if (compuF_L * compuF < 0) {p_R = pStar; compuF_R = compuF;}
+		else {p_L = pStar0; compuF_L = compuF;}
+    }
+    return pStar; 
 }
 
 // -----------------------------------------------------------
 // compute F(pStar, gamma, LeftState, RightState)
 //         = f(pStar, gamma, p_L, rho_L) +  f(pStar, gamma, p_R, rho_R) - (u_L - u_R)
 // -----------------------------------------------------------
-double ComputeF(const double gamma, const double pStar,
+double ComputeF(const double gamma, const double pStar, 
          const vector<double> &leftState, const vector<double> &rightState)
-{
-    return 0.1;
-}
+{   
+    double rho_L = leftState[0], rho_R = rightState[0];
+    double u_L = leftState[1], u_R = rightState[1];
+    double p_L = leftState[2], p_R = rightState[2];
+    double c_L = leftState[3], c_R = rightState[3];
+    double f_L, f_R, y;
 
-// -----------------------------------------------------------
-// compute dF/dpStar
-// -----------------------------------------------------------
-double ComputeDiffF(const double gamma, const double pStar,
-           const vector<double> &leftState, const vector<double> &rightState)
-{
-    return 0.1;
+    if( pStar >= p_L )
+    {
+        f_L = (pStar - p_L)/rho_L/c_L/sqrt( (gamma+1)/2/gamma *(pStar/p_L) + (gamma-1)/2/gamma);
+    }
+    if( pStar < p_L )
+    {
+        f_L = 2*c_L/(gamma-1)*(pow((pStar/p_L),((gamma-1)/2/gamma)) - 1);
+    }
+    if( pStar >= p_R )
+    {
+        f_R = (pStar - p_R)/rho_R/c_R/sqrt( (gamma+1)/2/gamma *(pStar/p_R) + (gamma-1)/2/gamma);
+    }
+    if( pStar < p_R )
+    {
+        f_R = 2*c_R/(gamma-1)*(pow((pStar/p_R),((gamma-1)/2/gamma)) - 1);
+    }
+    y = f_L + f_R + u_R - u_L;
+
+    return y;
 }
 
 // -----------------------------------------------------------
