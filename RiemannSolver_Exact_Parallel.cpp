@@ -183,7 +183,7 @@ int main(int argc, char *argv[])
     const int RecvRank = 0;
     const int TargetRank = (MyRank+1)%2;   // (0,1) --> (1,0)
     const int Tag = 123;           // arbitrary
-    const int NReq = 2;
+    const int NReq = 3;
     const int Count = NGrid - halfGrid;
 
     MPI_Request Request[NReq];
@@ -385,7 +385,7 @@ int main(int argc, char *argv[])
     {
         for (int i = 0; i < NComponents ; ++i)
             MPI_Irecv( (double*)(&U[i][halfGrid]), Count, MPI_DOUBLE, TargetRank, Tag + i, 
-                    MPI_COMM_WORLD, &Request[i % 2] );
+                    MPI_COMM_WORLD, &Request[i] );
 
         MPI_Waitall( NReq, Request, MPI_STATUSES_IGNORE );
         
@@ -401,7 +401,7 @@ int main(int argc, char *argv[])
     {
         for (int i = 0; i < NComponents ; ++i)
             MPI_Isend( (double*)(&U[i][halfGrid]), Count, MPI_DOUBLE, TargetRank, Tag + i, 
-                    MPI_COMM_WORLD, &Request[(i + 1) % 2] );
+                    MPI_COMM_WORLD, &Request[i] );
     }
 
     MPI_Finalize();
