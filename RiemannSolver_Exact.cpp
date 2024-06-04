@@ -85,8 +85,8 @@ class MidState {
 
 // ----------------- define functions -----------------//
 void SetInitState(const string &argStr, vector<double> &state);
-double CompPStarBisection(const double gamma, const vector<double> &leftState, const vector<double> &rightState);
-double ComputeF(const double gamma, const double pStar, const vector<double> &leftState, const vector<double> &rightState);
+double CompPStarBisection(const GammaFacts &GaF, const vector<double> &leftState, const vector<double> &rightState);
+double ComputeF(const GammaFacts &GaF, const double pStar, const vector<double> &leftState, const vector<double> &rightState);
 double Computef(const GammaFacts &GaF, const double pStar, const vector<double> &state);
 void SaveData(const int NGrids, string &basicStr, const vector<double> &x, const vector<vector<double>> &U);
 
@@ -378,19 +378,19 @@ void SetInitState(const string &argStr, vector<double> &state) {
 // -----------------------------------------------------------
 // compute the pStar from the Bisection Method
 // -----------------------------------------------------------
-double CompPStarBisection(const double gamma, const vector<double> &leftState, const vector<double> &rightState)
+double CompPStarBisection(const GammaFacts &GaF, const vector<double> &leftState, const vector<double> &rightState)
 {
     double pStar, pStar0, compuF, compuF_L, compuF_R;
-    double p_L0 = leftState[2], p_R0 = rightState[2], p_L=0, p_R= (p_L0+p_R0)/2 * 5;
+    double p_L=0, p_R= (leftState[2]+rightState[2])/2 * 5;
 
     while(true)
     {
         pStar0 = (p_L+p_R)/2;
         pStar = pStar0;
         if (p_L == pStar || p_R == pStar) break;
-		compuF = ComputeF(gamma, pStar, leftState, rightState);
-        compuF_L = ComputeF(gamma, p_L, leftState, rightState);
-        compuF_R = ComputeF(gamma, p_R, leftState, rightState);
+		compuF = ComputeF(GaF.ga, pStar, leftState, rightState);
+        compuF_L = ComputeF(GaF.ga, p_L, leftState, rightState);
+        compuF_R = ComputeF(GaF.ga, p_R, leftState, rightState);
 		if (compuF == 0) break;
 		if (compuF_L * compuF < 0) {p_R = pStar; compuF_R = compuF;}
 		else {p_L = pStar0; compuF_L = compuF;}
@@ -402,32 +402,28 @@ double CompPStarBisection(const double gamma, const vector<double> &leftState, c
 // compute F(pStar, gamma, LeftState, RightState)
 //         = f(pStar, gamma, p_L, rho_L) +  f(pStar, gamma, p_R, rho_R) - (u_L - u_R)
 // -----------------------------------------------------------
-double ComputeF(const double gamma, const double pStar, 
+double ComputeF(const GammaFacts &GaF, const double pStar, 
          const vector<double> &leftState, const vector<double> &rightState)
 {   
-    double rho_L = leftState[0], rho_R = rightState[0];
-    double u_L = leftState[1], u_R = rightState[1];
-    double p_L = leftState[2], p_R = rightState[2];
-    double c_L = leftState[3], c_R = rightState[3];
     double f_L, f_R, y;
 
-    if( pStar >= p_L )
-    {
-        f_L = (pStar - p_L)/rho_L/c_L/sqrt( (gamma+1)/2/gamma *(pStar/p_L) + (gamma-1)/2/gamma);
+    if( pStar >= leftState[2] )
+    {   
+        f_L = (pStar - leftState[2])/leftState[0]/leftState[3]/sqrt( GaF.gaP1Over2Ga *(pStar/leftState[2]) + GaF.gaM1Over2Ga);
     }
-    if( pStar < p_L )
+    if( pStar < leftState[2] )
     {
-        f_L = 2*c_L/(gamma-1)*(pow((pStar/p_L),((gamma-1)/2/gamma)) - 1);
+        f_L = 2*leftState[3]/(GaF.gaM1)*(pow((pStar/leftState[2]),GaF.gaM1Over2Ga) - 1);
     }
-    if( pStar >= p_R )
+    if( pStar >= rightState[2] )
     {
-        f_R = (pStar - p_R)/rho_R/c_R/sqrt( (gamma+1)/2/gamma *(pStar/p_R) + (gamma-1)/2/gamma);
+        f_R = (pStar - rightState[2])/rightState[0]/rightState[3]/sqrt( GaF.gaP1Over2Ga *(pStar/rightState[2]) + GaF.gaM1Over2Ga);
     }
-    if( pStar < p_R )
+    if( pStar < rightState[2] )
     {
-        f_R = 2*c_R/(gamma-1)*(pow((pStar/p_R),((gamma-1)/2/gamma)) - 1);
+        f_R = 2*rightState[3]/(GaF.gaM1)*(pow((pStar/rightState[2]),GaF.gaM1Over2Ga) - 1);
     }
-    y = f_L + f_R + u_R - u_L;
+    y = f_L + f_R + rightState[1] - leftState[1];
 
     return y;
 }
