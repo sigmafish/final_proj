@@ -56,13 +56,13 @@ class MidState {
 //       set uStar
         state[1] = tempState[1];
 
-        spSet = {0, 0, 0};
+        spSet = {0., 0., 0., 0.};
 //       set contact speed when it is on the same side
-        spSet[0] = sign * state[1] > 0 ? state[1] : 0;
+        spSet[1] = sign * state[1] > 0 ? state[1] : 0.;
         if (state[2] > sideState[2]) // pStar > pSide => shock
         {
 //         compute and set shock speed
-          spSet[1] = sideState[1] + sign * sideState[3]
+          spSet[2] = sideState[1] + sign * sideState[3]
                             * sqrt(GaF.gaP1Over2Ga * state[2]/sideState[2] + GaF.gaM1Over2Ga);
 //         compute and set rhoStar
           state[0] = sideState[0] * (sideState[2] * GaF.gaM1 + state[2] * GaF.gaP1)
@@ -76,19 +76,20 @@ class MidState {
 //         compute and set cStar
           state[3] = sqrt( GaF.ga * state[2] / state[0] );
 //         compute and set tail speed
-          spSet[1] = state[1] + sign * state[3];
+          spSet[2] = state[1] + sign * state[3];
 //         compute and set head speed
-          spSet[2] = sideState[1] + sign * sideState[3];
+          spSet[3] = sideState[1] + sign * sideState[3];
         }
     }
 };
 
 // ----------------- define functions -----------------//
 void SetInitState(const string &argStr, vector<double> &state);
-double CompPStarBisection(const double gamma, const vector<double> &leftState, const vector<double> &rightState);
-double ComputeF(const double gamma, const double pStar, const vector<double> &leftState, const vector<double> &rightState);
+double CompPStarBisection(const GammaFacts &GaF, const vector<double> &leftState, const vector<double> &rightState);
+double ComputeF(const GammaFacts &GaF, const double pStar, const vector<double> &leftState, const vector<double> &rightState);
 double Computef(const GammaFacts &GaF, const double pStar, const vector<double> &state);
-void SaveData(const int NGrids, string &basicStr, const vector<double> &x, const vector<vector<double>> &U);
+void CorrectTailSpeeds(vector<double> &leftSpSet, vector<double> &rightSpSet);
+void SaveData(const int NGrids, const int NThread, string &basicStr, const vector<double> &x, const vector<vector<double>> &U);
 
 // -----------------------------------------------------------
 // the main funtion with arguments:
@@ -108,13 +109,13 @@ int main(int argc, char *argv[])
     string argv1, argv2, argv3, argv4, argv5, argv6, argv7;
     if (IsTestMode)
     {
-		argv1 = "1.4";
-        argv2 = "20";
-        argv3 = "20";
-        argv4 = "0.25";
+		argv1 = "1.66666666666667";
+        argv2 = "2000";
+        argv3 = "200";
+        argv4 = "0.4";
         argv5 = "4";
-        argv6 = "0.125,0.0,0.1";
-        argv7 = "1.0,0.0,1.0";
+        argv6 = "1.25e3,0.0,5.0e2";
+        argv7 = "1.25e2,0.0,5.0";
     }else
     {
         argv1 = argv[1];
@@ -160,7 +161,7 @@ int main(int argc, char *argv[])
     vector<double> tempMidState;            // a temp vector to save the computed uStar and pStar
     MidState leftMidState, rightMidState;   // the left and right middle states
     double t;                               // the current time
-    double dist_0, dist_1, dist_2;          // the distances computed by speeds, dist_i=MidState.spSet[i]*dt
+    int dist_0, dist_1, dist_2, dist_3;     // the distances computed by speeds, dist_i=MidState.spSet[i]*dt
     double tempVel, temp;                   // the variables save temp data 
     string str;                             // the string value for printed out
 
@@ -236,6 +237,8 @@ int main(int argc, char *argv[])
 
     rightMidState = MidState(RightState, tempMidState, GaF, 1);
     leftMidState = MidState(LeftState, tempMidState, GaF, -1);
+    CorrectTailSpeeds(leftMidState.spSet, rightMidState.spSet);
+    
 // verify the results: rightMidState and leftMidState
     if (IsTestMode)
     {
@@ -265,54 +268,76 @@ int main(int argc, char *argv[])
 
     while (t <= EndTime)
     {
-//       update data on the left side
-        dist_0 = leftMidState.spSet[0] * t + x[halfGrid];
-        dist_1 = leftMidState.spSet[1] * t + x[halfGrid];
-        dist_2 = leftMidState.spSet[2] * t + x[halfGrid];
-        for (int j = halfGrid - 1 ; j >= 0  ; --j)
+//      update data on the left side
+        dist_0 = floor((leftMidState.spSet[0] * t + x[halfGrid] - x0) / dx);
+        dist_1 = floor((leftMidState.spSet[1] * t + x[halfGrid] - x0) / dx);
+        dist_2 = floor((leftMidState.spSet[2] * t + x[halfGrid] - x0) / dx);
+        dist_3 = floor((leftMidState.spSet[3] * t + x[halfGrid] - x0) / dx);
+        
+//      for grids in the left rarefaction region
+        for (int j = halfGrid - 1 ; j > dist_0 ; --j)
         {
-            if (x[j] > dist_0)
-            {
-                for (int i = 0; i < NComponents ; ++i)
-                    U[i][j] = rightMidState.state[i];
-            }else if ( dist_0 >= x[j] && x[j] > dist_1 )
-            {
-                for (int i = 0; i < NComponents ; ++i)
-                    U[i][j] = leftMidState.state[i];
-            }else if ( dist_1 >= x[j] && x[j] > dist_2 )
-            {
-                tempVel = (x[j] - x[halfGrid]) / t;
-                temp = GaF.twoOverGaP1 + GaF.gaM1OverGaP1 * (LeftState[1] - tempVel) / LeftState[3];
-                U[0][j] = LeftState[0] * pow(temp, GaF.twoOverGaM1);
-                U[1][j] = GaF.twoOverGaP1 * (LeftState[3] + GaF.gaM1Over2 * LeftState[1] + tempVel);
-                U[2][j] = LeftState[2] * pow(temp, GaF.twoGaOverGaM1);
-            }else
-                break;
+            tempVel = (x[j] - x[halfGrid]) / t;
+            temp = GaF.twoOverGaP1 - GaF.gaM1OverGaP1 * (RightState[1] - tempVel) / RightState[3];
+            U[0][j] = RightState[0] * pow(temp, GaF.twoOverGaM1);
+            U[1][j] = GaF.twoOverGaP1 * (-RightState[3] + GaF.gaM1Over2 * RightState[1] + tempVel);
+            U[2][j] = RightState[2] * pow(temp, GaF.twoGaOverGaM1);
+        }
+        
+//      for grids in the region behind the contact wave
+        for (int j = dist_0 ; j > dist_1 ; --j)
+            for (int i = 0; i < NComponents ; ++i)
+                U[i][j] = rightMidState.state[i];
+
+//      for grids in the region between the contact wave and shock wave or the tail of the rarefaction wave
+        for (int j = dist_1 ; j > dist_2 ; --j)
+            for (int i = 0; i < NComponents ; ++i)
+                U[i][j] = leftMidState.state[i];
+                
+//      for grids in the right rarefaction region                     
+        for (int j = dist_2 ; j > dist_3 ; --j)
+        {
+            tempVel = (x[j] - x[halfGrid]) / t;
+            temp = GaF.twoOverGaP1 + GaF.gaM1OverGaP1 * (LeftState[1] - tempVel) / LeftState[3];
+            U[0][j] = LeftState[0] * pow(temp, GaF.twoOverGaM1);
+            U[1][j] = GaF.twoOverGaP1 * (LeftState[3] + GaF.gaM1Over2 * LeftState[1] + tempVel);
+            U[2][j] = LeftState[2] * pow(temp, GaF.twoGaOverGaM1);        
         }
 
-//       update data on the right side
-        dist_0 = rightMidState.spSet[0] * t + x[halfGrid];
-        dist_1 = rightMidState.spSet[1] * t + x[halfGrid];
-        dist_2 = rightMidState.spSet[2] * t + x[halfGrid];
-        for (int j = halfGrid ; j < NGrid  ; ++j)
+//      update data on the right side
+        dist_0 = ceil((rightMidState.spSet[0] * t + x[halfGrid] - x0) / dx);
+        dist_1 = ceil((rightMidState.spSet[1] * t + x[halfGrid] - x0) / dx);
+        dist_2 = ceil((rightMidState.spSet[2] * t + x[halfGrid] - x0) / dx);
+        dist_3 = ceil((rightMidState.spSet[3] * t + x[halfGrid] - x0) / dx);
+
+//      for grids in the left rarefaction region       
+        for (int j = halfGrid ; j < dist_0  ; ++j)
         {
-            if (x[j] < dist_0)
-            {
-                for (int i = 0; i < NComponents ; ++i)
-                    U[i][j] = leftMidState.state[i];
-            }else if ( dist_0 <= x[j] && x[j] < dist_1 )
-            {
-                for (int i = 0; i < NComponents ; ++i)
-                    U[i][j] = rightMidState.state[i];
-            }else if ( dist_1 <= x[j] && x[j] < dist_2 )
-            {
-                tempVel = (x[j] - x[halfGrid]) / t;
-                temp = GaF.twoOverGaP1 - GaF.gaM1OverGaP1 * (RightState[1] - tempVel) / RightState[3];
-                U[0][j] = RightState[0] * pow(temp, GaF.twoOverGaM1);
-                U[1][j] = GaF.twoOverGaP1 * (-RightState[3] + GaF.gaM1Over2 * RightState[1] + tempVel);
-                U[2][j] = RightState[2] * pow(temp, GaF.twoGaOverGaM1);
-            }else
-                break;
+            tempVel = (x[j] - x[halfGrid]) / t;
+            temp = GaF.twoOverGaP1 + GaF.gaM1OverGaP1 * (LeftState[1] - tempVel) / LeftState[3];
+            U[0][j] = LeftState[0] * pow(temp, GaF.twoOverGaM1);
+            U[1][j] = GaF.twoOverGaP1 * (LeftState[3] + GaF.gaM1Over2 * LeftState[1] + tempVel);
+            U[2][j] = LeftState[2] * pow(temp, GaF.twoGaOverGaM1);
+        }
+
+//      for grids in the region behind the contact wave
+        for (int j = dist_0 ; j < dist_1 ; ++j)
+            for (int i = 0; i < NComponents ; ++i)
+                U[i][j] = leftMidState.state[i];
+
+//      for grids in the region between the contact wave and shock wave or the tail of the rarefaction wave       
+        for (int j = dist_1 ; j < dist_2 ; ++j)
+            for (int i = 0; i < NComponents ; ++i)
+                U[i][j] = rightMidState.state[i];
+
+//      for grids in the right rarefaction region
+        for (int j = dist_2 ; j < dist_3 ; ++j)
+        {
+            tempVel = (x[j] - x[halfGrid]) / t;
+            temp = GaF.twoOverGaP1 - GaF.gaM1OverGaP1 * (RightState[1] - tempVel) / RightState[3];
+            U[0][j] = RightState[0] * pow(temp, GaF.twoOverGaM1);
+            U[1][j] = GaF.twoOverGaP1 * (-RightState[3] + GaF.gaM1Over2 * RightState[1] + tempVel);
+            U[2][j] = RightState[2] * pow(temp, GaF.twoGaOverGaM1);   
         }
 
         t += dt;
@@ -344,7 +369,7 @@ int main(int argc, char *argv[])
                "# Initial condition of the strong shock problem:\n" +
                "#   left  state: (rho, Vx, P) = (" + argv6 + ")\n" +
                "#   right state: (rho, Vx, P) = (" + argv7 + ")\n\n");
-    SaveData(NGrid, str, x, U);
+    SaveData(NGrid, NThread, str, x, U);
 
     return EXIT_SUCCESS;
 }
@@ -378,19 +403,19 @@ void SetInitState(const string &argStr, vector<double> &state) {
 // -----------------------------------------------------------
 // compute the pStar from the Bisection Method
 // -----------------------------------------------------------
-double CompPStarBisection(const double gamma, const vector<double> &leftState, const vector<double> &rightState)
+double CompPStarBisection(const GammaFacts &GaF, const vector<double> &leftState, const vector<double> &rightState)
 {
     double pStar, pStar0, compuF, compuF_L, compuF_R;
-    double p_L0 = leftState[2], p_R0 = rightState[2], p_L=0, p_R= (p_L0+p_R0)/2 * 5;
+    double p_L=0, p_R= (leftState[2]+rightState[2])/2 * 5;
 
     while(true)
     {
         pStar0 = (p_L+p_R)/2;
         pStar = pStar0;
         if (p_L == pStar || p_R == pStar) break;
-		compuF = ComputeF(gamma, pStar, leftState, rightState);
-        compuF_L = ComputeF(gamma, p_L, leftState, rightState);
-        compuF_R = ComputeF(gamma, p_R, leftState, rightState);
+		compuF = ComputeF(GaF.ga, pStar, leftState, rightState);
+        compuF_L = ComputeF(GaF.ga, p_L, leftState, rightState);
+        compuF_R = ComputeF(GaF.ga, p_R, leftState, rightState);
 		if (compuF == 0) break;
 		if (compuF_L * compuF < 0) {p_R = pStar; compuF_R = compuF;}
 		else {p_L = pStar0; compuF_L = compuF;}
@@ -402,32 +427,28 @@ double CompPStarBisection(const double gamma, const vector<double> &leftState, c
 // compute F(pStar, gamma, LeftState, RightState)
 //         = f(pStar, gamma, p_L, rho_L) +  f(pStar, gamma, p_R, rho_R) - (u_L - u_R)
 // -----------------------------------------------------------
-double ComputeF(const double gamma, const double pStar, 
+double ComputeF(const GammaFacts &GaF, const double pStar, 
          const vector<double> &leftState, const vector<double> &rightState)
 {   
-    double rho_L = leftState[0], rho_R = rightState[0];
-    double u_L = leftState[1], u_R = rightState[1];
-    double p_L = leftState[2], p_R = rightState[2];
-    double c_L = leftState[3], c_R = rightState[3];
     double f_L, f_R, y;
 
-    if( pStar >= p_L )
-    {
-        f_L = (pStar - p_L)/rho_L/c_L/sqrt( (gamma+1)/2/gamma *(pStar/p_L) + (gamma-1)/2/gamma);
+    if( pStar >= leftState[2] )
+    {   
+        f_L = (pStar - leftState[2])/leftState[0]/leftState[3]/sqrt( GaF.gaP1Over2Ga *(pStar/leftState[2]) + GaF.gaM1Over2Ga);
     }
-    if( pStar < p_L )
+    if( pStar < leftState[2] )
     {
-        f_L = 2*c_L/(gamma-1)*(pow((pStar/p_L),((gamma-1)/2/gamma)) - 1);
+        f_L = 2*leftState[3]/(GaF.gaM1)*(pow((pStar/leftState[2]),GaF.gaM1Over2Ga) - 1);
     }
-    if( pStar >= p_R )
+    if( pStar >= rightState[2] )
     {
-        f_R = (pStar - p_R)/rho_R/c_R/sqrt( (gamma+1)/2/gamma *(pStar/p_R) + (gamma-1)/2/gamma);
+        f_R = (pStar - rightState[2])/rightState[0]/rightState[3]/sqrt( GaF.gaP1Over2Ga *(pStar/rightState[2]) + GaF.gaM1Over2Ga);
     }
-    if( pStar < p_R )
+    if( pStar < rightState[2] )
     {
-        f_R = 2*c_R/(gamma-1)*(pow((pStar/p_R),((gamma-1)/2/gamma)) - 1);
+        f_R = 2*rightState[3]/(GaF.gaM1)*(pow((pStar/rightState[2]),GaF.gaM1Over2Ga) - 1);
     }
-    y = f_L + f_R + u_R - u_L;
+    y = f_L + f_R + rightState[1] - leftState[1];
 
     return y;
 }
@@ -447,15 +468,36 @@ double Computef(const GammaFacts &GaF, const double pStar, const vector<double> 
 }
 
 // -----------------------------------------------------------
+// Correct the speed sets while the tail speed of rarefaction wave is not on the direction we expected, 
+// i.e. not positive in the right-hand side or not negative in the left-hand side 
+// This kind of issue seems to be only happens when there is rarefaction wave on one side, ex. the strong shock case.
+// -----------------------------------------------------------
+void CorrectTailSpeeds(vector<double> &leftSpSet, vector<double> &rightSpSet)
+{
+    // the speed of tail
+    if (leftSpSet[2] > 0)
+    {
+        rightSpSet[0] = leftSpSet[2];
+        leftSpSet[2] = 0.;
+    }
+    
+    if (rightSpSet[2] < 0)
+    {
+        leftSpSet[0] = rightSpSet[2];
+        rightSpSet[2] = 0.;
+    }
+}
+
+// -----------------------------------------------------------
 // save data
 // -----------------------------------------------------------
-void SaveData(const int NGrid, string &headerStr, const vector<double> &x, const vector<vector<double>> &U)
+void SaveData(const int NGrid, const int NThread, string &headerStr, const vector<double> &x, const vector<vector<double>> &U)
 {
     headerStr.append("#   \tr   \t\t\t\tRho   \t\t\t\tVx   \t\t\t\tVy   \t\t\t\tVz   \t\t\t\tPres\n");
     //printf("%s", headerStr.c_str());
 
 //  create the file of results and mark the NGrid
-    string FileName = "results_" + to_string(NGrid) + ".txt";
+    string FileName = "results_" + to_string(NGrid) + "_" + to_string(NThread) + ".txt";
     //sprintf( FileName, "results_%d.txt", NGrid );
     FILE *File = fopen( FileName.c_str(), "w" );
 
