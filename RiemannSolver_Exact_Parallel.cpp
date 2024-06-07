@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <cstdio>
 #include <cstdlib>
+#include <mpi.h>
+#include <omp.h>
 
 #include <exception>
 #include <string>
@@ -8,6 +10,9 @@
 #include <vector>
 #include <time.h>
 
+#define SecPara 0
+#define ForPara 1
+#define OpenMPType ForPara 
 #define IsTestMode 0
 
 using namespace std;
@@ -17,7 +22,7 @@ using namespace std;
 // the class for store the gamma factors
 class GammaFacts {
  public:
-    double ga, oneOverGa, gaP1, gaM1, gaM1Over2, gaM1Over2Ga, gaP1Over2Ga, 
+    double ga, oneOverGa, gaP1, gaM1, gaM1Over2, gaM1Over2Ga, gaP1Over2Ga,
            twoOverGaM1, twoOverGaP1, twoGaOverGaM1, gaM1OverGaP1;
 
     GammaFacts(){}
@@ -35,7 +40,7 @@ class GammaFacts {
         twoGaOverGaM1 = 1 / gaM1Over2Ga;
         gaM1OverGaP1 = gaM1 / gaP1;
 
-        //printf("GammaFacts: %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f\n",  
+        //printf("GammaFacts: %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f\n",
         //       ga, gaP1, gaM1, gaM1Over2, gaM1Over2Ga, gaP1Over2Ga, oneOverGa, twoOverGaM1, twoOverGaP1, twoGaOverGaM1, gaM1OverGaP1);
     }
 };
@@ -100,22 +105,33 @@ void SaveData(const int NGrids, const int NThread, string &basicStr, const vecto
 // argv[5]: (int)NThreads
 // argv[6]: (string)LeftState
 // argv[7]: (string)RightState
-// ex. ./RiemannSolver_Exact.out {gamma} {NGrid} {TimeStep} {EndTime} {NThreads} {LeftState} {RightState}
+// ex. ./RiemannSolver_Exact_Parallel.out {gamma} {NGrid} {TimeStep} {EndTime} {NThreads} {LeftState} {RightState}
 // -----------------------------------------------------------
 int main(int argc, char *argv[])
 {
-	
+/********* initialize mpi *********/
+    int NRank, MyRank;
+    MPI_Init( &argc, &argv );
+    MPI_Comm_rank( MPI_COMM_WORLD, &MyRank );
+    MPI_Comm_size( MPI_COMM_WORLD, &NRank );
+//   this program allows only two ranks
+    if ( NRank != 2 )
+    {
+        fprintf( stderr, "ERROR: NRank (%d) != 2\n", NRank );
+        MPI_Abort( MPI_COMM_WORLD, 1 );
+    }
+
 /********* get the arguments *********/
     string argv1, argv2, argv3, argv4, argv5, argv6, argv7;
     if (IsTestMode)
     {
 		argv1 = "1.66666666666667";
         argv2 = "2000";
-        argv3 = "200";
-        argv4 = "0.4";
-        argv5 = "4";
-        argv6 = "1.25e3,0.0,5.0e2";
-        argv7 = "1.25e2,0.0,5.0";
+        argv3 = "100";
+        argv4 = "0.1";
+        argv5 = "8";
+        argv6 = "1.0,0.0,1.0";
+        argv7 = "0.125,0.0,0.1";
     }else
     {
         argv1 = argv[1];
@@ -128,15 +144,15 @@ int main(int argc, char *argv[])
     }
 
 /********* set variables from arguments *********/
-   double gamma = 1.4;                 // the ratio of specific heats, Cp/Cv, gamma=1.4 for air
-   int NGrid = 100;                    // the number of grid(1D)
-   int TimeStep = 20;                   // the time steps
-   double EndTime = 0.1;                // the end of time
-   int NThread = 4;                     // the number of threads
-   int NComponents = 3;                 // the number of the Euler equations  
-   vector<double> LeftState;            // [rho_L, u_L, P_L, c_L], take u=Vx for 1D case
-   vector<double> RightState;           // [rho_R, u_R, P_R, c_R]
-   try {
+    double gamma = 1.4;                 // the ratio of specific heats, Cp/Cv, gamma=1.4 for air
+    int NGrid = 2000;                   // the number of grid(1D)
+    int TimeStep = 20;                   // the time steps
+    double EndTime = 0.1;                // the end of time
+    int NThread = 4;                     // the number of threads
+    int NComponents = 3;                 // the number of the Euler equations
+    vector<double> LeftState;            // [rho_L, u_L, P_L, c_L], take u=Vx for 1D case
+    vector<double> RightState;           // [rho_R, u_R, P_R, c_R]
+    try {
 	   gamma = stod(argv1);
        NGrid = stoi(argv2);
        TimeStep = stoi(argv3);
@@ -145,10 +161,10 @@ int main(int argc, char *argv[])
        SetInitState(argv6, LeftState);   // insert [rho_L, u_L, P_L]
        SetInitState(argv7, RightState);  // insert [rho_R, u_R, P_R]
        NComponents = LeftState.size();   // only for 1D case
-   } catch (exception const &ex) {
-       printf( "There are invalid numbers\n" );
-       return EXIT_FAILURE;
-   }
+    } catch (exception const &ex) {
+        printf( "There are invalid numbers\n" );
+        return EXIT_FAILURE;
+    }
 
 /********* set constants and variables *********/
     const GammaFacts GaF(gamma);            // collect the factors related with gamma
@@ -162,8 +178,22 @@ int main(int argc, char *argv[])
     MidState leftMidState, rightMidState;   // the left and right middle states
     double t;                               // the current time
     int dist_0, dist_1, dist_2, dist_3;     // the distances computed by speeds, dist_i=MidState.spSet[i]*dt
-    double tempVel, temp;                   // the variables save temp data 
+    double tempVel, temp;                   // the variables save temp data
     string str;                             // the string value for printed out
+
+/********* set mpi *********/
+//   prepare data transfer
+    const int SendRank = 1;
+    const int RecvRank = 0;
+    const int TargetRank = (MyRank+1)%2;   // (0,1) --> (1,0)
+    const int Tag = 123;           // arbitrary
+    const int NReq = 3;
+    const int Count = NGrid - halfGrid;
+
+    MPI_Request Request[NReq];
+
+/********* set openmp *********/
+    omp_set_num_threads( NThread );
 
 /********* initialization *********/
     clock_t tStart = clock();               // start the clock
@@ -185,24 +215,30 @@ int main(int argc, char *argv[])
     for (int i = 0 ; i < NComponents ; ++i)
     {
         U[i] = vector<double>(NGrid);
-        for (int j = 0 ; j < halfGrid ; ++j)
-        {
-            U[i][j] = LeftState[i];
-        }
-        for (int j = halfGrid ; j < NGrid ; ++j)
-        {
-            U[i][j] = RightState[i];
-        }
+# pragma omp parallel
+        { // begin the openMP parallel-1
+# pragma omp for nowait
+            for (int j = 0 ; j < halfGrid ; ++j)
+                U[i][j] = LeftState[i];
+# pragma omp for nowait
+            for (int j = halfGrid ; j < NGrid ; ++j)
+                U[i][j] = RightState[i];
+        } // end the openMP parallel-1
     }
 
 //  set x
     x[0] = x0;
     x[halfGrid] = x0 + halfGrid*dx;
-    for (int i = 1 ; i < halfGrid ; ++i)
-        x[i] = x[i-1] + dx;
-    for (int i = halfGrid + 1 ; i < NGrid ; ++i)
-        x[i] = x[i-1] + dx;
 
+# pragma omp parallel
+    { // begin the openMP parallel-2
+# pragma omp for nowait
+        for (int i = 1 ; i < halfGrid ; ++i)
+            x[i] = x[0] + i*dx;
+# pragma omp for nowait
+        for (int i = halfGrid + 1 ; i < NGrid ; ++i)
+            x[i] = x[0] + i*dx;
+    } // end the openMP parallel-1
 // verify the results: x and U
     if (IsTestMode)
     {
@@ -238,7 +274,7 @@ int main(int argc, char *argv[])
     rightMidState = MidState(RightState, tempMidState, GaF, 1);
     leftMidState = MidState(LeftState, tempMidState, GaF, -1);
     CorrectTailSpeeds(leftMidState.spSet, rightMidState.spSet);
-    
+	
 // verify the results: rightMidState and leftMidState
     if (IsTestMode)
     {
@@ -268,78 +304,127 @@ int main(int argc, char *argv[])
 
     while (t <= EndTime)
     {
-//      update data on the left side
-        dist_0 = floor((leftMidState.spSet[0] * t + x[halfGrid] - x0) / dx);
-        dist_1 = floor((leftMidState.spSet[1] * t + x[halfGrid] - x0) / dx);
-        dist_2 = floor((leftMidState.spSet[2] * t + x[halfGrid] - x0) / dx);
-        dist_3 = floor((leftMidState.spSet[3] * t + x[halfGrid] - x0) / dx);
-        
-//      for grids in the left rarefaction region
-        for (int j = halfGrid - 1 ; j > dist_0 ; --j)
+        if (MyRank == RecvRank)
         {
-            tempVel = (x[j] - x[halfGrid]) / t;
-            temp = GaF.twoOverGaP1 - GaF.gaM1OverGaP1 * (RightState[1] - tempVel) / RightState[3];
-            U[0][j] = RightState[0] * pow(temp, GaF.twoOverGaM1);
-            U[1][j] = GaF.twoOverGaP1 * (-RightState[3] + GaF.gaM1Over2 * RightState[1] + tempVel);
-            U[2][j] = RightState[2] * pow(temp, GaF.twoGaOverGaM1);
-        }
-        
-//      for grids in the region behind the contact wave
-        for (int j = dist_0 ; j > dist_1 ; --j)
-            for (int i = 0; i < NComponents ; ++i)
-                U[i][j] = rightMidState.state[i];
-
-//      for grids in the region between the contact wave and shock wave or the tail of the rarefaction wave
-        for (int j = dist_1 ; j > dist_2 ; --j)
-            for (int i = 0; i < NComponents ; ++i)
-                U[i][j] = leftMidState.state[i];
-                
-//      for grids in the right rarefaction region                     
-        for (int j = dist_2 ; j > dist_3 ; --j)
+//          update data on the left side
+			dist_0 = floor((leftMidState.spSet[0] * t + x[halfGrid] - x0) / dx);
+			dist_1 = floor((leftMidState.spSet[1] * t + x[halfGrid] - x0) / dx);
+			dist_2 = floor((leftMidState.spSet[2] * t + x[halfGrid] - x0) / dx);
+			dist_3 = floor((leftMidState.spSet[3] * t + x[halfGrid] - x0) / dx);
+#  if ( OpenMPType == ForPara )
+    # pragma omp parallel private (tempVel, temp)
+#  elif ( OpenMPType == SecPara )
+    # pragma omp parallel sections private (tempVel, temp)
+#  endif
+            { // begin the openMP parallel-3-0
+#  if ( OpenMPType == ForPara )
+    # pragma omp for nowait
+#  elif ( OpenMPType == SecPara )
+    # pragma omp section
+#  endif
+//      		for grids in the left rarefaction region
+				for (int j = halfGrid - 1 ; j > dist_0 ; --j)
+				{
+					tempVel = (x[j] - x[halfGrid]) / t;
+					temp = GaF.twoOverGaP1 - GaF.gaM1OverGaP1 * (RightState[1] - tempVel) / RightState[3];
+					U[0][j] = RightState[0] * pow(temp, GaF.twoOverGaM1);
+					U[1][j] = GaF.twoOverGaP1 * (-RightState[3] + GaF.gaM1Over2 * RightState[1] + tempVel);
+					U[2][j] = RightState[2] * pow(temp, GaF.twoGaOverGaM1);
+				}
+#  if ( OpenMPType == ForPara )
+    # pragma omp for collapse( 2 ) nowait
+#  elif ( OpenMPType == SecPara )
+    # pragma omp section
+#  endif
+//      		for grids in the region behind the contact wave
+				for (int j = dist_0 ; j > dist_1 ; --j)
+					for (int i = 0; i < NComponents ; ++i)
+						U[i][j] = rightMidState.state[i];
+#  if ( OpenMPType == ForPara )
+    # pragma omp for collapse( 2 ) nowait
+#  elif ( OpenMPType == SecPara )
+    # pragma omp section
+#  endif
+//      		for grids in the region between the contact wave and shock wave or the tail of the rarefaction wave
+				for (int j = dist_1 ; j > dist_2 ; --j)
+					for (int i = 0; i < NComponents ; ++i)
+						U[i][j] = leftMidState.state[i];				
+#  if ( OpenMPType == ForPara )
+    # pragma omp for nowait
+#  elif ( OpenMPType == SecPara )
+    # pragma omp section
+#  endif
+//      		for grids in the right rarefaction region 
+				for (int j = dist_2 ; j > dist_3 ; --j)
+				{
+					tempVel = (x[j] - x[halfGrid]) / t;
+					temp = GaF.twoOverGaP1 + GaF.gaM1OverGaP1 * (LeftState[1] - tempVel) / LeftState[3];
+					U[0][j] = LeftState[0] * pow(temp, GaF.twoOverGaM1);
+					U[1][j] = GaF.twoOverGaP1 * (LeftState[3] + GaF.gaM1Over2 * LeftState[1] + tempVel);
+					U[2][j] = LeftState[2] * pow(temp, GaF.twoGaOverGaM1);        
+				}	
+            } // end the openMP parallel-3-0
+        }else
         {
-            tempVel = (x[j] - x[halfGrid]) / t;
-            temp = GaF.twoOverGaP1 + GaF.gaM1OverGaP1 * (LeftState[1] - tempVel) / LeftState[3];
-            U[0][j] = LeftState[0] * pow(temp, GaF.twoOverGaM1);
-            U[1][j] = GaF.twoOverGaP1 * (LeftState[3] + GaF.gaM1Over2 * LeftState[1] + tempVel);
-            U[2][j] = LeftState[2] * pow(temp, GaF.twoGaOverGaM1);        
+//          update data on the right side
+			dist_0 = ceil((rightMidState.spSet[0] * t + x[halfGrid] - x0) / dx);
+			dist_1 = ceil((rightMidState.spSet[1] * t + x[halfGrid] - x0) / dx);
+			dist_2 = ceil((rightMidState.spSet[2] * t + x[halfGrid] - x0) / dx);
+			dist_3 = ceil((rightMidState.spSet[3] * t + x[halfGrid] - x0) / dx);
+#  if ( OpenMPType == ForPara )
+    # pragma omp parallel private (tempVel, temp)
+#  elif ( OpenMPType == SecPara )
+    # pragma omp parallel sections private (tempVel, temp)
+#  endif
+            { // begin the openMP parallel-3-1
+#  if ( OpenMPType == ForPara )
+    # pragma omp for nowait
+#  elif ( OpenMPType == SecPara )
+    # pragma omp section
+#  endif
+//      		for grids in the left rarefaction region       
+				for (int j = halfGrid ; j < dist_0  ; ++j)
+				{
+					tempVel = (x[j] - x[halfGrid]) / t;
+					temp = GaF.twoOverGaP1 + GaF.gaM1OverGaP1 * (LeftState[1] - tempVel) / LeftState[3];
+					U[0][j] = LeftState[0] * pow(temp, GaF.twoOverGaM1);
+					U[1][j] = GaF.twoOverGaP1 * (LeftState[3] + GaF.gaM1Over2 * LeftState[1] + tempVel);
+					U[2][j] = LeftState[2] * pow(temp, GaF.twoGaOverGaM1);
+				}
+#  if ( OpenMPType == ForPara )
+    # pragma omp for collapse( 2 ) nowait
+#  elif ( OpenMPType == SecPara )
+    # pragma omp section
+#  endif
+//      		for grids in the region behind the contact wave
+				for (int j = dist_0 ; j < dist_1 ; ++j)
+					for (int i = 0; i < NComponents ; ++i)
+						U[i][j] = leftMidState.state[i];
+#  if ( OpenMPType == ForPara )
+    # pragma omp for collapse( 2 ) nowait
+#  elif ( OpenMPType == SecPara )
+    # pragma omp section
+#  endif
+//      		for grids in the region between the contact wave and shock wave or the tail of the rarefaction wave       
+				for (int j = dist_1 ; j < dist_2 ; ++j)
+					for (int i = 0; i < NComponents ; ++i)
+						U[i][j] = rightMidState.state[i];
+#  if ( OpenMPType == ForPara )
+    # pragma omp for nowait
+#  elif ( OpenMPType == SecPara )
+    # pragma omp section
+#  endif
+//      		for grids in the right rarefaction region
+				for (int j = dist_2 ; j < dist_3 ; ++j)
+				{
+					tempVel = (x[j] - x[halfGrid]) / t;
+					temp = GaF.twoOverGaP1 - GaF.gaM1OverGaP1 * (RightState[1] - tempVel) / RightState[3];
+					U[0][j] = RightState[0] * pow(temp, GaF.twoOverGaM1);
+					U[1][j] = GaF.twoOverGaP1 * (-RightState[3] + GaF.gaM1Over2 * RightState[1] + tempVel);
+					U[2][j] = RightState[2] * pow(temp, GaF.twoGaOverGaM1);   
+				}
+            } // end the openMP parallel-3-1
         }
-
-//      update data on the right side
-        dist_0 = ceil((rightMidState.spSet[0] * t + x[halfGrid] - x0) / dx);
-        dist_1 = ceil((rightMidState.spSet[1] * t + x[halfGrid] - x0) / dx);
-        dist_2 = ceil((rightMidState.spSet[2] * t + x[halfGrid] - x0) / dx);
-        dist_3 = ceil((rightMidState.spSet[3] * t + x[halfGrid] - x0) / dx);
-
-//      for grids in the left rarefaction region       
-        for (int j = halfGrid ; j < dist_0  ; ++j)
-        {
-            tempVel = (x[j] - x[halfGrid]) / t;
-            temp = GaF.twoOverGaP1 + GaF.gaM1OverGaP1 * (LeftState[1] - tempVel) / LeftState[3];
-            U[0][j] = LeftState[0] * pow(temp, GaF.twoOverGaM1);
-            U[1][j] = GaF.twoOverGaP1 * (LeftState[3] + GaF.gaM1Over2 * LeftState[1] + tempVel);
-            U[2][j] = LeftState[2] * pow(temp, GaF.twoGaOverGaM1);
-        }
-
-//      for grids in the region behind the contact wave
-        for (int j = dist_0 ; j < dist_1 ; ++j)
-            for (int i = 0; i < NComponents ; ++i)
-                U[i][j] = leftMidState.state[i];
-
-//      for grids in the region between the contact wave and shock wave or the tail of the rarefaction wave       
-        for (int j = dist_1 ; j < dist_2 ; ++j)
-            for (int i = 0; i < NComponents ; ++i)
-                U[i][j] = rightMidState.state[i];
-
-//      for grids in the right rarefaction region
-        for (int j = dist_2 ; j < dist_3 ; ++j)
-        {
-            tempVel = (x[j] - x[halfGrid]) / t;
-            temp = GaF.twoOverGaP1 - GaF.gaM1OverGaP1 * (RightState[1] - tempVel) / RightState[3];
-            U[0][j] = RightState[0] * pow(temp, GaF.twoOverGaM1);
-            U[1][j] = GaF.twoOverGaP1 * (-RightState[3] + GaF.gaM1Over2 * RightState[1] + tempVel);
-            U[2][j] = RightState[2] * pow(temp, GaF.twoGaOverGaM1);   
-        }
-
         t += dt;
     }
 
@@ -348,7 +433,7 @@ int main(int argc, char *argv[])
 /********* save U *********/
     t = (double)(tEnd - tStart)/CLOCKS_PER_SEC;         // execution time
 
-// verify the results: t and U
+//   verify the results: t and U
     if (IsTestMode)
     {
         printf("ExecutionTime: %.5f\n", t);
@@ -363,13 +448,31 @@ int main(int argc, char *argv[])
         printf("%s\n", str.c_str());
     }
 
-    str = "# This table provides a solution of the Riemann problem at t=";
-    str.append(to_string(EndTime) + "\n# with (NGrid, TimeStep, ExecutionTime) = (" +
-               to_string(NGrid) + "," + to_string(TimeStep) + "," + to_string(t) + ")\n" +
-               "# Initial condition of the strong shock problem:\n" +
-               "#   left  state: (rho, Vx, P) = (" + argv6 + ")\n" +
-               "#   right state: (rho, Vx, P) = (" + argv7 + ")\n\n");
-    SaveData(NGrid, NThread, str, x, U);
+//   combine data
+    if (MyRank == RecvRank)
+    {
+        for (int i = 0; i < NComponents ; ++i)
+            MPI_Irecv( (double*)(&U[i][halfGrid]), Count, MPI_DOUBLE, TargetRank, Tag + i, 
+                    MPI_COMM_WORLD, &Request[i] );
+
+        MPI_Waitall( NReq, Request, MPI_STATUSES_IGNORE );
+        
+//       save data to a file
+        str = "# This table provides a solution of the Riemann problem at t=";
+        str.append(to_string(EndTime) + "\n# with (NGrid, TimeStep, ExecutionTime) = (" +
+                to_string(NGrid) + "," + to_string(TimeStep) + "," + to_string(t) + ")\n" +
+                "# Initial condition of the strong shock problem:\n" +
+                "#   left  state: (rho, Vx, P) = (" + argv6 + ")\n" +
+                "#   right state: (rho, Vx, P) = (" + argv7 + ")\n\n");
+        SaveData(NGrid, NThread, str, x, U);
+    }else
+    {
+        for (int i = 0; i < NComponents ; ++i)
+            MPI_Isend( (double*)(&U[i][halfGrid]), Count, MPI_DOUBLE, TargetRank, Tag + i, 
+                    MPI_COMM_WORLD, &Request[i] );
+    }
+
+    MPI_Finalize();
 
     return EXIT_SUCCESS;
 }
