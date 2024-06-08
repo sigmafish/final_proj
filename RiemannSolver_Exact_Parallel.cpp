@@ -100,12 +100,13 @@ void SaveData(const int NGrids, const int NThread, string &basicStr, const vecto
 // the main funtion with arguments:
 // argv[1]: (double)gamma
 // argv[2]: (int)NGrid
-// argv[3]: (int)TimeStep
-// argv[4]: (double)EndTime
-// argv[5]: (int)NThreads
-// argv[6]: (string)LeftState
-// argv[7]: (string)RightState
-// ex. ./RiemannSolver_Exact_Parallel.out {gamma} {NGrid} {TimeStep} {EndTime} {NThreads} {LeftState} {RightState}
+// argv[3]: (double)TubeLen
+// argv[4]: (int)TimeStep
+// argv[5]: (double)EndTime
+// argv[6]: (int)NThreads
+// argv[7]: (string)LeftState
+// argv[8]: (string)RightState
+// ex. ./RiemannSolver_Exact_Parallel.out {gamma} {NGrid} {TubeLen} {TimeStep} {EndTime} {NThreads} {LeftState} {RightState}
 // -----------------------------------------------------------
 int main(int argc, char *argv[])
 {
@@ -122,16 +123,17 @@ int main(int argc, char *argv[])
     }
 
 /********* get the arguments *********/
-    string argv1, argv2, argv3, argv4, argv5, argv6, argv7;
+    string argv1, argv2, argv3, argv4, argv5, argv6, argv7, argv8;
     if (IsTestMode)
     {
 		argv1 = "1.66666666666667";
         argv2 = "2000";
-        argv3 = "100";
-        argv4 = "0.1";
-        argv5 = "8";
-        argv6 = "1.0,0.0,1.0";
-        argv7 = "0.125,0.0,0.1";
+		argv3 = "6.0";
+        argv4 = "100";
+        argv5 = "0.1";
+        argv6 = "8";
+        argv7 = "1.0,0.0,1.0";
+        argv8 = "0.125,0.0,0.1";
     }else
     {
         argv1 = argv[1];
@@ -141,11 +143,13 @@ int main(int argc, char *argv[])
         argv5 = argv[5];
         argv6 = argv[6];
 		argv7 = argv[7];
+		argv8 = argv[8];
     }
 
 /********* set variables from arguments *********/
     double gamma = 1.4;                 // the ratio of specific heats, Cp/Cv, gamma=1.4 for air
     int NGrid = 2000;                   // the number of grid(1D)
+	double TubeLen = 1.0;               // the length of 1D tube
     int TimeStep = 20;                   // the time steps
     double EndTime = 0.1;                // the end of time
     int NThread = 4;                     // the number of threads
@@ -155,11 +159,12 @@ int main(int argc, char *argv[])
     try {
 	   gamma = stod(argv1);
        NGrid = stoi(argv2);
-       TimeStep = stoi(argv3);
-       EndTime = stod(argv4);
-       NThread = stoi(argv5);
-       SetInitState(argv6, LeftState);   // insert [rho_L, u_L, P_L]
-       SetInitState(argv7, RightState);  // insert [rho_R, u_R, P_R]
+	   TubeLen = stod(argv3);
+       TimeStep = stoi(argv4);
+       EndTime = stod(argv5);
+       NThread = stoi(argv6);
+       SetInitState(argv7, LeftState);   // insert [rho_L, u_L, P_L]
+       SetInitState(argv8, RightState);  // insert [rho_R, u_R, P_R]
        NComponents = LeftState.size();   // only for 1D case
     } catch (exception const &ex) {
         printf( "There are invalid numbers\n" );
@@ -168,7 +173,7 @@ int main(int argc, char *argv[])
 
 /********* set constants and variables *********/
     const GammaFacts GaF(gamma);            // collect the factors related with gamma
-    const double dx = 1. / NGrid;           // the space interval, uniform over x, y and z
+    const double dx = TubeLen / NGrid;           // the space interval, uniform over x, y and z
     const double dt = EndTime / TimeStep;   // the time interval
     const double x0 = 0.00025;              // the start grid of x
     const int halfGrid = NGrid / 2;         // the half of NGrid
@@ -466,8 +471,8 @@ int main(int argc, char *argv[])
         str.append(to_string(EndTime) + "\n# with (NGrid, TimeStep, Rank0ExeTime, Rank1ExeTime) = (" +
               to_string(NGrid) + "," + to_string(TimeStep) + "," + to_string(t) + "," + to_string(recv_exe_time) + ")\n" +
                 "# Initial condition of the strong shock problem:\n" +
-                "#   left  state: (rho, Vx, P) = (" + argv6 + ")\n" +
-                "#   right state: (rho, Vx, P) = (" + argv7 + ")\n\n");
+                "#   left  state: (rho, Vx, P) = (" + argv7 + ")\n" +
+                "#   right state: (rho, Vx, P) = (" + argv8 + ")\n\n");
         SaveData(NGrid, NThread, str, x, U);
     }else
     {
