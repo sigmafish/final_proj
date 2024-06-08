@@ -202,7 +202,8 @@ int main(int argc, char *argv[])
     omp_set_num_threads( NThread );
 
 /********* initialization *********/
-    clock_t tStart = clock();               // start the clock
+    clock_t CPUStart = clock();               // start the CPU clock
+    double OMPStart = omp_get_wtime();            // start the OpenMP clock
 
 //  set LeftState and RightState
     LeftState.push_back(sqrt(gamma * LeftState[2] / LeftState[0]));     // insert c_L
@@ -307,9 +308,14 @@ int main(int argc, char *argv[])
         printf("%s\n", str.c_str());
     }
     t = dt;
-
+	str = "";
+    clock_t LoopStart, LoopEnd;
+    double OMPLoopStart, OMPLoopEnd;
+	
     while (t <= EndTime)
     {
+        LoopStart = clock();
+        OMPLoopStart = omp_get_wtime();
         if (MyRank == RecvRank)
         {
 //          update data on the left side
@@ -431,14 +437,24 @@ int main(int argc, char *argv[])
 				}
             } // end the openMP parallel-3-1
         }
+        LoopEnd = clock();
+        OMPLoopEnd = omp_get_wtime();
+        //printf("MyRank=%d, t=%.5f: CPUTime=%.5f\n", MyRank, t, (double)(LoopEnd - LoopStart)/CLOCKS_PER_SEC);
+//		record the execution time for each loop
+		//str.append("MyRank=" + to_string(MyRank) + ", t=" + to_string(t) + ": CPUTime=" + to_string((double)(LoopEnd - LoopStart)/CLOCKS_PER_SEC) 
+        //      + ", ExecutionTime=" + to_string(OMPLoopEnd - OMPLoopStart) + "\n");
         t += dt;
     }
 
-    clock_t tEnd = clock();         // finish the clock
+    clock_t CPUEnd = clock();         // finish the CPU clock
+    double OMPEnd = omp_get_wtime();     // finish the OpenMP clock
 
 /********* save U *********/
-    t = (double)(tEnd - tStart)/CLOCKS_PER_SEC;         // execution time
-
+    t = (double)(CPUEnd - CPUStart)/CLOCKS_PER_SEC;         // execution time
+    
+	str.append("MyRank=" + to_string(MyRank) + ", CPUTime=" + to_string(t) + ", ExecutionTime=" + to_string(OMPEnd - OMPStart) + "\n");
+    printf("%s", str.c_str());
+	
 //   verify the results: t and U
     if (IsTestMode)
     {
