@@ -187,8 +187,9 @@ int main(int argc, char *argv[])
     const int RecvRank = 0;
     const int TargetRank = (MyRank+1)%2;   // (0,1) --> (1,0)
     const int Tag = 123;           // arbitrary
-    const int NReq = 3;
+    const int NReq = 4;
     const int Count = NGrid - halfGrid;
+    double recv_exe_time;             // the execution time of the other rank
 
     MPI_Request Request[NReq];
 
@@ -436,7 +437,7 @@ int main(int argc, char *argv[])
 //   verify the results: t and U
     if (IsTestMode)
     {
-        printf("ExecutionTime: %.5f\n", t);
+        printf("ExecutionTime of MyRank=%d: %.5f\n", MyRank, t);
         str = "";
         str.append("U:\n");
         for (int i = 0; i < NComponents; ++i){
@@ -451,25 +452,30 @@ int main(int argc, char *argv[])
 //   combine data
     if (MyRank == RecvRank)
     {
-        for (int i = 0; i < NComponents ; ++i)
+        int i;
+        for (i = 0; i < NComponents ; ++i)
             MPI_Irecv( (double*)(&U[i][halfGrid]), Count, MPI_DOUBLE, TargetRank, Tag + i, 
                     MPI_COMM_WORLD, &Request[i] );
+
+        MPI_Irecv( &recv_exe_time, 1, MPI_DOUBLE, TargetRank, Tag + i, MPI_COMM_WORLD, &Request[i] );
 
         MPI_Waitall( NReq, Request, MPI_STATUSES_IGNORE );
         
 //       save data to a file
         str = "# This table provides a solution of the Riemann problem at t=";
-        str.append(to_string(EndTime) + "\n# with (NGrid, TimeStep, ExecutionTime) = (" +
-                to_string(NGrid) + "," + to_string(TimeStep) + "," + to_string(t) + ")\n" +
+        str.append(to_string(EndTime) + "\n# with (NGrid, TimeStep, Rank0ExeTime, Rank1ExeTime) = (" +
+              to_string(NGrid) + "," + to_string(TimeStep) + "," + to_string(t) + "," + to_string(recv_exe_time) + ")\n" +
                 "# Initial condition of the strong shock problem:\n" +
                 "#   left  state: (rho, Vx, P) = (" + argv6 + ")\n" +
                 "#   right state: (rho, Vx, P) = (" + argv7 + ")\n\n");
         SaveData(NGrid, NThread, str, x, U);
     }else
     {
-        for (int i = 0; i < NComponents ; ++i)
+        int i;
+        for (i = 0; i < NComponents ; ++i)
             MPI_Isend( (double*)(&U[i][halfGrid]), Count, MPI_DOUBLE, TargetRank, Tag + i, 
                     MPI_COMM_WORLD, &Request[i] );
+        MPI_Isend( &t, 1, MPI_DOUBLE, TargetRank, Tag + i, MPI_COMM_WORLD, &Request[i] );
     }
 
     MPI_Finalize();
