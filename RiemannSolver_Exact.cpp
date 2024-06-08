@@ -470,17 +470,17 @@ double Computef(const GammaFacts &GaF, const double pStar, const vector<double> 
 // -----------------------------------------------------------
 // Correct the speed sets while the tail speed of rarefaction wave is not on the direction we expected, 
 // i.e. not positive in the right-hand side or not negative in the left-hand side 
-// This kind of issue seems to be only happens when there is rarefaction wave on one side, ex. the strong shock case.
+// This kind of issue seems only happen when there is rarefaction wave on one of the sides, ex. the strong shock case.
 // -----------------------------------------------------------
 void CorrectTailSpeeds(vector<double> &leftSpSet, vector<double> &rightSpSet)
 {
-    // the speed of tail
+//  correct the tail of speed on the left
     if (leftSpSet[2] > 0)
     {
         rightSpSet[0] = leftSpSet[2];
         leftSpSet[2] = 0.;
     }
-    
+//  correct the tail of speed on the right   
     if (rightSpSet[2] < 0)
     {
         leftSpSet[0] = rightSpSet[2];
