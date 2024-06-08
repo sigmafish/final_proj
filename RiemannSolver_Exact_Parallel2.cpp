@@ -314,114 +314,112 @@ int main(int argc, char *argv[])
     }
     
     str = "";
-    clock_t LoopStart, LoopEnd;
-    double OMPLoopStart, OMPLoopEnd;
-    /*
-    while (t <= EndTime)
-    {
-        LoopStart = clock();
-        OMPLoopStart = omp_get_wtime();
-    */
-    int halfTimeStep = TimeStep/2;
+
     if (MyRank == RecvRank)
     {
 //      update data on the left side
-//# pragma omp for private ( temp, tempVel )  
 // begin the openMP parallel-3-1 
 # pragma omp for collapse( 2 ) private ( temp, tempVel, dist_0, dist_1, dist_2, dist_3 )
-            for (int k = 0; k < TimeStep ; ++k)
+        for (int k = 0; k < TimeStep ; ++k)
+        {
+            for (int j = halfGrid - 1 ; j > 0  ; --j)
             {
-                for (int j = halfGrid - 1 ; j > 0  ; --j)
-                {           
-        			dist_0 = floor((leftMidState.spSet[0] * t[k] + x[halfGrid] - x0) / dx);
-        			dist_1 = floor((leftMidState.spSet[1] * t[k] + x[halfGrid] - x0) / dx);
-        			dist_2 = floor((leftMidState.spSet[2] * t[k] + x[halfGrid] - x0) / dx);
-        			dist_3 = floor((leftMidState.spSet[3] * t[k] + x[halfGrid] - x0) / dx);
-//      		    for grids in the right rarefaction region
-                    if (halfGrid - 1 >= j && j > dist_0)
-                    {
-                        tempVel = (x[j] - x[halfGrid]) / t[k];
-    					temp = GaF.twoOverGaP1 - GaF.gaM1OverGaP1 * (RightState[1] - tempVel) / RightState[3];
-    					U[0][j] = RightState[0] * pow(temp, GaF.twoOverGaM1);
-    					U[1][j] = GaF.twoOverGaP1 * (-RightState[3] + GaF.gaM1Over2 * RightState[1] + tempVel);
-    					U[2][j] = RightState[2] * pow(temp, GaF.twoGaOverGaM1);    
-//      		    for grids in the region behind the contact wave
-                    }else if (dist_0 >= j && j > dist_1)
-                    {
-     					for (int i = 0; i < NComponents ; ++i)
-    						U[i][j] = rightMidState.state[i];   
-//      	        for grids in the region between the contact wave and shock wave or the tail of the rarefaction wave		
-                    }else if (dist_1 >= j && j > dist_2)
-                    {
-                        for (int i = 0; i < NComponents ; ++i)
-						    U[i][j] = leftMidState.state[i];
-//      		    for grids in the left rarefaction region 
-                    }else if (dist_2 >= j && j > dist_3)
-                    {
-    					tempVel = (x[j] - x[halfGrid]) / t[k];
-    					temp = GaF.twoOverGaP1 + GaF.gaM1OverGaP1 * (LeftState[1] - tempVel) / LeftState[3];
-    					U[0][j] = LeftState[0] * pow(temp, GaF.twoOverGaM1);
-    					U[1][j] = GaF.twoOverGaP1 * (LeftState[3] + GaF.gaM1Over2 * LeftState[1] + tempVel);
-    					U[2][j] = LeftState[2] * pow(temp, GaF.twoGaOverGaM1);  
-                    }
+                clock_t LoopStart = clock();
+                double OMPLoopStart = omp_get_wtime();
+    			dist_0 = floor((leftMidState.spSet[0] * t[k] + x[halfGrid] - x0) / dx);
+    			dist_1 = floor((leftMidState.spSet[1] * t[k] + x[halfGrid] - x0) / dx);
+    			dist_2 = floor((leftMidState.spSet[2] * t[k] + x[halfGrid] - x0) / dx);
+    			dist_3 = floor((leftMidState.spSet[3] * t[k] + x[halfGrid] - x0) / dx);
+//      	    for grids in the right rarefaction region
+                if (halfGrid - 1 >= j && j > dist_0)
+                {
+                    tempVel = (x[j] - x[halfGrid]) / t[k];
+					temp = GaF.twoOverGaP1 - GaF.gaM1OverGaP1 * (RightState[1] - tempVel) / RightState[3];
+					U[0][j] = RightState[0] * pow(temp, GaF.twoOverGaM1);
+					U[1][j] = GaF.twoOverGaP1 * (-RightState[3] + GaF.gaM1Over2 * RightState[1] + tempVel);
+					U[2][j] = RightState[2] * pow(temp, GaF.twoGaOverGaM1);    
+//      	    for grids in the region behind the contact wave
+                }else if (dist_0 >= j && j > dist_1)
+                {
+ 					for (int i = 0; i < NComponents ; ++i)
+						U[i][j] = rightMidState.state[i];   
+//      	    for grids in the region between the contact wave and shock wave or the tail of the rarefaction wave		
+                }else if (dist_1 >= j && j > dist_2)
+                {
+                    for (int i = 0; i < NComponents ; ++i)
+					    U[i][j] = leftMidState.state[i];
+//      	    for grids in the left rarefaction region 
+                }else if (dist_2 >= j && j > dist_3)
+                {
+					tempVel = (x[j] - x[halfGrid]) / t[k];
+					temp = GaF.twoOverGaP1 + GaF.gaM1OverGaP1 * (LeftState[1] - tempVel) / LeftState[3];
+					U[0][j] = LeftState[0] * pow(temp, GaF.twoOverGaM1);
+					U[1][j] = GaF.twoOverGaP1 * (LeftState[3] + GaF.gaM1Over2 * LeftState[1] + tempVel);
+					U[2][j] = LeftState[2] * pow(temp, GaF.twoGaOverGaM1);  
                 }
+                clock_t LoopEnd = clock();
+                double OMPLoopEnd = omp_get_wtime();
+                //printf("MyRank=%d, t=%.5f: CPUTime=%.5f\n", MyRank, t, (double)(LoopEnd - LoopStart)/CLOCKS_PER_SEC);
+//		        record the execution time for each loop
+        		//str.append("MyRank=" + to_string(MyRank) + ", t=" + to_string(t[k]) + ", x=" + to_string(x[j]) + ": CPUTime=" + to_string((double)(LoopEnd - LoopStart)/CLOCKS_PER_SEC) 
+                //      + ", ExecutionTime=" + to_string(OMPLoopEnd - OMPLoopStart) + "\n");
             }
+        }
 // end the openMP parallel-3-0
     }else
     {
 //      update data on the right side
-//# pragma omp for private ( temp, tempVel )
 // begin the openMP parallel-3-1 
 # pragma omp for collapse( 2 ) private ( temp, tempVel, dist_0, dist_1, dist_2, dist_3 ) 
-            for (int k = 0; k < TimeStep; ++k)
+        for (int k = 0; k < TimeStep; ++k)
+        {
+            for (int j = halfGrid ; j < NGrid  ; ++j)
             {
-                for (int j = halfGrid ; j < NGrid  ; ++j)
+                clock_t LoopStart = clock();
+                double OMPLoopStart = omp_get_wtime();
+    			dist_0 = ceil((rightMidState.spSet[0] * t[k] + x[halfGrid] - x0) / dx);
+    			dist_1 = ceil((rightMidState.spSet[1] * t[k] + x[halfGrid] - x0) / dx);
+    			dist_2 = ceil((rightMidState.spSet[2] * t[k] + x[halfGrid] - x0) / dx);
+    			dist_3 = ceil((rightMidState.spSet[3] * t[k] + x[halfGrid] - x0) / dx);
+//      	    for grids in the left rarefaction region
+                if (halfGrid <= j && j < dist_0 )
                 {
-        			dist_0 = ceil((rightMidState.spSet[0] * t[k] + x[halfGrid] - x0) / dx);
-        			dist_1 = ceil((rightMidState.spSet[1] * t[k] + x[halfGrid] - x0) / dx);
-        			dist_2 = ceil((rightMidState.spSet[2] * t[k] + x[halfGrid] - x0) / dx);
-        			dist_3 = ceil((rightMidState.spSet[3] * t[k] + x[halfGrid] - x0) / dx);
-//      		    for grids in the left rarefaction region
-                    if (halfGrid <= j && j < dist_0 )
-                    {
-    					tempVel = (x[j] - x[halfGrid]) / t[k];
-    					temp = GaF.twoOverGaP1 + GaF.gaM1OverGaP1 * (LeftState[1] - tempVel) / LeftState[3];
-    					U[0][j] = LeftState[0] * pow(temp, GaF.twoOverGaM1);
-    					U[1][j] = GaF.twoOverGaP1 * (LeftState[3] + GaF.gaM1Over2 * LeftState[1] + tempVel);
-    					U[2][j] = LeftState[2] * pow(temp, GaF.twoGaOverGaM1); 
-                    }
-//      		    for grids in the region behind the contact wave
-                    else if(dist_0 <= j  && j < dist_1)
-                    {
-                        for (int i = 0; i < NComponents ; ++i)
-						    U[i][j] = leftMidState.state[i];
-//      		    for grids in the region between the contact wave and shock wave or the tail of the rarefaction wave
-                    }else if(dist_1 <= j && j < dist_2)
-                    {
-                        for (int i = 0; i < NComponents ; ++i)
-						    U[i][j] = rightMidState.state[i];
-//      		    for grids in the right rarefaction region     
-                    }else if(dist_2 <= j && j < dist_3)
-                    {
-    					tempVel = (x[j] - x[halfGrid]) / t[k];
-    					temp = GaF.twoOverGaP1 - GaF.gaM1OverGaP1 * (RightState[1] - tempVel) / RightState[3];
-    					U[0][j] = RightState[0] * pow(temp, GaF.twoOverGaM1);
-    					U[1][j] = GaF.twoOverGaP1 * (-RightState[3] + GaF.gaM1Over2 * RightState[1] + tempVel);
-    					U[2][j] = RightState[2] * pow(temp, GaF.twoGaOverGaM1);   
-                    }
+					tempVel = (x[j] - x[halfGrid]) / t[k];
+					temp = GaF.twoOverGaP1 + GaF.gaM1OverGaP1 * (LeftState[1] - tempVel) / LeftState[3];
+					U[0][j] = LeftState[0] * pow(temp, GaF.twoOverGaM1);
+					U[1][j] = GaF.twoOverGaP1 * (LeftState[3] + GaF.gaM1Over2 * LeftState[1] + tempVel);
+					U[2][j] = LeftState[2] * pow(temp, GaF.twoGaOverGaM1); 
                 }
+//      	    for grids in the region behind the contact wave
+                else if(dist_0 <= j  && j < dist_1)
+                {
+                    for (int i = 0; i < NComponents ; ++i)
+					    U[i][j] = leftMidState.state[i];
+//      	    for grids in the region between the contact wave and shock wave or the tail of the rarefaction wave
+                }else if(dist_1 <= j && j < dist_2)
+                {
+                    for (int i = 0; i < NComponents ; ++i)
+					    U[i][j] = rightMidState.state[i];
+//      	    for grids in the right rarefaction region     
+                }else if(dist_2 <= j && j < dist_3)
+                {
+					tempVel = (x[j] - x[halfGrid]) / t[k];
+					temp = GaF.twoOverGaP1 - GaF.gaM1OverGaP1 * (RightState[1] - tempVel) / RightState[3];
+					U[0][j] = RightState[0] * pow(temp, GaF.twoOverGaM1);
+					U[1][j] = GaF.twoOverGaP1 * (-RightState[3] + GaF.gaM1Over2 * RightState[1] + tempVel);
+					U[2][j] = RightState[2] * pow(temp, GaF.twoGaOverGaM1);   
+                }
+                clock_t LoopEnd = clock();
+                double OMPLoopEnd = omp_get_wtime();
+                //printf("MyRank=%d, t=%.5f: CPUTime=%.5f\n", MyRank, t, (double)(LoopEnd - LoopStart)/CLOCKS_PER_SEC);
+//		        record the execution time for each loop
+        		//str.append("MyRank=" + to_string(MyRank) + ", t=" + to_string(t[k]) + ", x=" + to_string(x[j]) + ": CPUTime=" + to_string((double)(LoopEnd - LoopStart)/CLOCKS_PER_SEC) 
+                //      + ", ExecutionTime=" + to_string(OMPLoopEnd - OMPLoopStart) + "\n");
             }
+        }
 // end the openMP parallel-3-1
     }
-/*
-        LoopEnd = clock();
-        OMPLoopEnd = omp_get_wtime();
-        //printf("MyRank=%d, t=%.5f: CPUTime=%.5f\n", MyRank, t, (double)(LoopEnd - LoopStart)/CLOCKS_PER_SEC);
-        str.append("MyRank=" + to_string(MyRank) + ", t=" + to_string(t) + ": CPUTime=" + to_string((double)(LoopEnd - LoopStart)/CLOCKS_PER_SEC) 
-              + ", ExecutionTime=" + to_string(OMPLoopEnd - OMPLoopStart) + "\n");
-        t += dt;
-    }
-*/
+
     clock_t CPUEnd = clock();         // finish the CPU clock
     double OMPEnd = omp_get_wtime();     // finish the OpenMP clock
 /********* save U *********/
